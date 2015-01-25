@@ -1,0 +1,109 @@
+---
+title: "Practical Machine Learning Project"
+author: "Diego Alfaro"
+date: "Saturday, January 24, 2015"
+output: html_document
+---
+
+#Data Preparation
+
+```{r echo=FALSE}
+setwd("G:/Coursera/Data Science Specialization/08) Practical Machine Learning/Project")
+```
+
+The first steps I took to solve the project were to load the data files and the libraries that will be used, and additionally to set the seed:
+
+```{r message=FALSE}
+library(caret)
+library(rattle)
+training <- read.csv("pml-training.csv", header=T)
+test <- read.csv("pml-testing.csv", header=T)
+
+set.seed(3262)
+```
+
+After loading the data, I realized that I would need to trim it since it was 160 variables wide. Plotting each variable against the *classe* column was a very slow process, and it didn't yield any useful results so I won't bother putting the results in here. I also tried reducing columns through PCA, but I kept getting errors that stated that some columns were not numeric.
+
+Although exploring the data didn't yield any obvious preference for predictors, it did allow me to see that some of the columns were extremely sparse, and that caused R to see them as factors. I proceeded to filter out columns in two steps:
+  1) Calculate the variance of each column, and then remove those that returned NA.
+  2) Even after this, some columns were still detected as non-numeric, so I removed those columns where is.numeric(x) returned FALSE.
+  3) Append the *classe* and *user_name* variables to the reduced training dataset.
+
+This is the code to perform these tasks:
+
+```{r message=FALSE}
+columns <- colnames(training)
+colvars <- numeric(length(columns))
+
+for (i in (1:length(colvars)))
+{
+  colvars[i] <- var(training[,i])
+}
+
+reduced.training <- training[!(is.na(colvars))] #89 vars
+reduced.training <- reduced.training[,-c(1,3:7)] #remove
+
+columns <- colnames(reduced.training)
+col.numeric <- logical(length(columns))
+
+for (i in (1:length(col.numeric)))
+{
+  col.numeric[i] <- is.numeric(reduced.training[,i])
+}
+
+reduced.training <- reduced.training[col.numeric] #53 variables
+
+reduced.training <- cbind(training$classe, training$user_name, reduced.training) #append classe and user_name
+
+colnames(reduced.training)[1] <- "classe"
+colnames(reduced.training)[2] <- "user_name"
+```
+
+With the reduced dataset, I proceeded to do the split into the training and validation set:
+
+```{r message=FALSE}
+inTrain <- createDataPartition(y=reduced.training$classe, p=0.6, list=F)
+train <- reduced.training[inTrain,]
+validate <- reduced.training[-inTrain,]
+```
+
+#Data Modeling
+
+As part of the assignment specified that we needed to use cross-validation, I specified the control to be 10-fold K Validation:
+
+```{r message=FALSE}
+ctrl <- trainControl(method = "cv", number = 10)
+```
+
+I then proceeded to build a first model using desicion trees (rpart algorithm):
+
+```{r message=FALSE}
+modelFit <- train(classe~., method="rpart", data=train, trControl=ctrl)
+```
+```{r}
+fancyRpartPlot(modelFit$finalModel)
+```
+
+This model, however, had a less than ideal accuracy (49% as shown in the confusion matrix below).
+
+```{r}
+predictions <- predict(modelFit, newdata=validate)
+confusionMatrix(predictions, validate$classe)
+```
+
+The second model I built, used random forest and had an accuracy of 99%, as shown below:
+
+```{r}
+modelFit <- train(classe~., method="rf", data=train, trControl=ctrl)
+predictions <- predict(modelFit, newdata=validate)
+confusionMatrix(predictions, validate$classe)
+```
+
+#Results
+
+This last model was used to predict on the test set, resulting in the predictions below:
+
+```{r}
+predictions <- predict(modelFit, newdata=test)
+predictions
+```
